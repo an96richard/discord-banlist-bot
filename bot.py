@@ -169,7 +169,7 @@ def is_kick_whitelisted(member: discord.Member) -> bool:
 
 async def run_yes_no_poll(ctx: commands.Context, question: str) -> tuple[int, int, int]:
     """
-    Creates a poll message, waits POLL_DURATION_SECONDS, then returns (yes_votes, no_votes, invalid_votes).
+    Creates a poll message, waits POLL_DURATION_SECONDS, thens returns (yes_votes, no_votes, invalid_votes).
     One vote per person:
       - if a user reacted to both ✅ and ❌, their vote is invalid and not counted.
     Bots are ignored.
