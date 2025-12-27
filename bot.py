@@ -59,7 +59,11 @@ NO_EMOJI = "❌"
 ADD_POLL_QUESTION_TEMPLATE = "Should we add **{item}** to **{list_name}**?"
 REMOVE_POLL_QUESTION_TEMPLATE = "Should we remove **{item}** from **{list_name}**?"
 
-DATA_FILE = Path("lists.json")
+DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_FILE = DATA_DIR / "lists.json"
+
+
 
 # ============================================================
 # BOT SETUP
