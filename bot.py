@@ -78,9 +78,25 @@ intents.message_content = True  # required for prefix commands
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-print(os.getenv("SEED_LISTS"))
-print(DATA_FILE.exists())
-if os.getenv("SEED_LISTS") == "true" and not DATA_FILE.exists():
+def needs_seed() -> bool:
+    if not DATA_FILE.exists():
+        return True
+    try:
+        data = json.loads(DATA_FILE.read_text("utf-8"))
+        if not isinstance(data, dict):
+            return True
+        # seed if all items lists are empty
+        for v in data.values():
+            if isinstance(v, dict) and v.get("items"):
+                return False
+            if isinstance(v, list) and v:
+                return False
+        return True
+    except Exception:
+        return True
+
+
+if os.getenv("SEED_LISTS") == "true" and needs_seed():
     print("Seeding lists.json from SEED_LISTS mode")
 
     seed_data = {
