@@ -63,20 +63,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "lists.json"
 
-print("=== VOLUME CHECK ===")
-print("DATA_DIR:", DATA_DIR)
-print("Exists:", DATA_DIR.exists())
-print("Is dir:", DATA_DIR.is_dir())
 
-test_file = DATA_DIR / "railway_test.txt"
-try:
-    test_file.write_text("volume test ok")
-    print("Write test: SUCCESS")
-    print("Read back:", test_file.read_text())
-except Exception as e:
-    print("Write test: FAILED", repr(e))
-
-print("====================")
 
 
 # ============================================================
@@ -87,6 +74,50 @@ intents.message_content = True  # required for prefix commands
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+if os.getenv("SEED_LISTS") == "true" and not DATA_FILE.exists():
+    print("Seeding lists.json from SEED_LISTS mode")
+
+    seed_data = {
+        "banned": {
+    "emoji": "🚫",
+    "items": [
+      "Aditya Lee Sin",
+      "Bendel Corki",
+      "Jugg Ezreal",
+      "Jugg Kalista",
+      "Jugg Lucian",
+      "Jugg Malphite",
+      "Mbeast Camille",
+      "Mbeast Fiora",
+      "Mbeast Riven",
+      "Pak Kayle",
+      "Pak Singed",
+      "Pak Zaheen",
+      "Shorterace Ambessa",
+      "Yoshi Fiora",
+      "Yoshi Kennen",
+      "Yoshi Talon"
+    ]
+  },
+  "limited": {
+    "emoji": "1️⃣",
+    "items": [
+      "Jugg Mf",
+      "Mikey Smolder",
+      "Mikey Zeri",
+      "Pak Taliyah",
+      "Richie Pyke",
+      "Richie Vel'koz"
+    ]
+  },
+  "semi-limited": {
+    "emoji": "2️⃣",
+    "items": []
+  }
+    }
+
+    DATA_FILE.write_text(json.dumps(seed_data, indent=2), encoding="utf-8")
 
 # ============================================================
 # STORAGE
