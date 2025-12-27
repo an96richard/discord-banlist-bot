@@ -1,4 +1,43 @@
+# =========================
+# Environment / Secrets
+# =========================
 .env
+.env.*
+*.env
+
+# =========================
+# Python cache / artifacts
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+ENV/
+env/
+
+# =========================
+# Local data files (Railway volume replaces these)
+# =========================
 lists.json
+data/
+*.json
+
+# =========================
+# OS / Editor noise
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# Logs
+# =========================
+*.log
