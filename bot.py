@@ -10,7 +10,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 # ============================================================
-# ENV / CONFIG
+# ENV / CONFIGa
 # ============================================================
 load_dotenv()
 
