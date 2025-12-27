@@ -63,6 +63,20 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "lists.json"
 
+print("=== VOLUME CHECK ===")
+print("DATA_DIR:", DATA_DIR)
+print("Exists:", DATA_DIR.exists())
+print("Is dir:", DATA_DIR.is_dir())
+
+test_file = DATA_DIR / "railway_test.txt"
+try:
+    test_file.write_text("volume test ok")
+    print("Write test: SUCCESS")
+    print("Read back:", test_file.read_text())
+except Exception as e:
+    print("Write test: FAILED", repr(e))
+
+print("====================")
 
 
 # ============================================================
