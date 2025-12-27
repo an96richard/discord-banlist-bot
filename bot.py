@@ -59,10 +59,14 @@ NO_EMOJI = "❌"
 ADD_POLL_QUESTION_TEMPLATE = "Should we add **{item}** to **{list_name}**?"
 REMOVE_POLL_QUESTION_TEMPLATE = "Should we remove **{item}** from **{list_name}**?"
 
-DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
+DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "lists.json"
 
+print("USING DATA FILE:", DATA_FILE)
+print("EXISTS?:", DATA_FILE.exists())
+if DATA_FILE.exists():
+    print("SIZE:", DATA_FILE.stat().st_size)
 
 
 
@@ -74,7 +78,8 @@ intents.message_content = True  # required for prefix commands
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-
+print(os.getenv("SEED_LISTS"))
+print(DATA_FILE.exists())
 if os.getenv("SEED_LISTS") == "true" and not DATA_FILE.exists():
     print("Seeding lists.json from SEED_LISTS mode")
 
