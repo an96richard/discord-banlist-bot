@@ -63,10 +63,6 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "lists.json"
 
-print("USING DATA FILE:", DATA_FILE)
-print("EXISTS?:", DATA_FILE.exists())
-if DATA_FILE.exists():
-    print("SIZE:", DATA_FILE.stat().st_size)
 
 
 
@@ -78,67 +74,6 @@ intents.message_content = True  # required for prefix commands
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-def needs_seed() -> bool:
-    if not DATA_FILE.exists():
-        return True
-    try:
-        data = json.loads(DATA_FILE.read_text("utf-8"))
-        if not isinstance(data, dict):
-            return True
-        # seed if all items lists are empty
-        for v in data.values():
-            if isinstance(v, dict) and v.get("items"):
-                return False
-            if isinstance(v, list) and v:
-                return False
-        return True
-    except Exception:
-        return True
-
-
-if os.getenv("SEED_LISTS") == "true" and needs_seed():
-    print("Seeding lists.json from SEED_LISTS mode")
-
-    seed_data = {
-        "banned": {
-    "emoji": "🚫",
-    "items": [
-      "Aditya Lee Sin",
-      "Bendel Corki",
-      "Jugg Ezreal",
-      "Jugg Kalista",
-      "Jugg Lucian",
-      "Jugg Malphite",
-      "Mbeast Camille",
-      "Mbeast Fiora",
-      "Mbeast Riven",
-      "Pak Kayle",
-      "Pak Singed",
-      "Pak Zaheen",
-      "Shorterace Ambessa",
-      "Yoshi Fiora",
-      "Yoshi Kennen",
-      "Yoshi Talon"
-    ]
-  },
-  "limited": {
-    "emoji": "1️⃣",
-    "items": [
-      "Jugg Mf",
-      "Mikey Smolder",
-      "Mikey Zeri",
-      "Pak Taliyah",
-      "Richie Pyke",
-      "Richie Vel'koz"
-    ]
-  },
-  "semi-limited": {
-    "emoji": "2️⃣",
-    "items": []
-  }
-    }
-
-    DATA_FILE.write_text(json.dumps(seed_data, indent=2), encoding="utf-8")
 
 # ============================================================
 # STORAGE
