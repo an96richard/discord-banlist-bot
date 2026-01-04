@@ -66,7 +66,7 @@ DATA_FILE = DATA_DIR / "lists.json"
 # BOT SETUP
 # ============================================================
 intents = discord.Intents.default()
-intents.message_content = True  # required for prefix commands + reading message content
+intents.message_content = True  # REQUIRED to read message content
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -233,42 +233,64 @@ def resolve_removal_target(items: list[str], target: str) -> tuple[int | None, s
 
 # ============================================================
 # GIF AUTO-DELETE (Tenor + Giphy + .gif attachments)
-# Deletes matching messages 5 seconds after they are sent.
 # ============================================================
+GIF_DOMAINS = ("tenor.com", "media.tenor.com", "giphy.com", "media.giphy.com")
+
 def message_has_gif(message: discord.Message) -> bool:
     # 1) Uploaded GIF attachments
     for a in message.attachments:
-        if (a.filename or "").lower().endswith(".gif"):
-            return True
-        if (a.content_type or "").lower() == "image/gif":
+        fn = (a.filename or "").lower()
+        ct = (a.content_type or "").lower()
+        if fn.endswith(".gif") or ct == "image/gif":
             return True
 
-    # 2) Tenor / Giphy links in plain text (no .gif required)
+    # 2) Tenor / Giphy links in message text (no .gif required)
     text = (message.content or "").lower()
-    if "tenor.com" in text or "media.tenor.com" in text:
-        return True
-    if "giphy.com" in text or "media.giphy.com" in text:
+    if any(d in text for d in GIF_DOMAINS):
         return True
 
-    # 3) Discord auto-embeds (GIF picker often shows up here)
+    # 3) Discord auto-embeds (GIF picker often appears here)
     for e in message.embeds:
-        urls = [
+        candidates = [
             e.url,
             getattr(e.thumbnail, "url", None),
             getattr(e.image, "url", None),
+            getattr(e.video, "url", None),
         ]
-        for u in urls:
+        for u in candidates:
             if not u:
                 continue
             u = str(u).lower()
-            if "tenor.com" in u or "media.tenor.com" in u:
-                return True
-            if "giphy.com" in u or "media.giphy.com" in u:
+            if any(d in u for d in GIF_DOMAINS):
                 return True
             if u.endswith(".gif"):
                 return True
 
     return False
+
+async def delete_if_gif_after_delay(message: discord.Message, delay: int = 5) -> None:
+    """
+    Waits, re-fetches the message (so embeds/previews are present), then deletes if it matches.
+    """
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+    # Re-fetch so we catch Tenor/Giphy preview embeds that arrive after initial send
+    try:
+        fresh = await message.channel.fetch_message(message.id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+
+    if message_has_gif(fresh):
+        try:
+            await fresh.delete()
+            # Debug line (shows in Railway logs)
+            print(f"[GIF-DELETE] Deleted message {fresh.id} in #{getattr(fresh.channel, 'name', 'unknown')}")
+        except discord.Forbidden:
+            # Missing Manage Messages perms
+            print(f"[GIF-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
+        except discord.NotFound:
+            pass
 
 # ============================================================
 # EVENTS
@@ -283,17 +305,20 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    if message_has_gif(message):
-        await asyncio.sleep(5)
-        try:
-            await message.delete()
-        except (discord.Forbidden, discord.NotFound):
-            # Forbidden = missing Manage Messages perms
-            # NotFound = message already deleted
-            pass
+    # Schedule a delayed re-check (don’t block the event loop)
+    asyncio.create_task(delete_if_gif_after_delay(message, delay=5))
 
     # IMPORTANT: keeps prefix commands working
     await bot.process_commands(message)
+
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message):
+    # Discord often adds embeds/previews by editing the message shortly after sending
+    if after.author and after.author.bot:
+        return
+
+    # As soon as it edits, re-check immediately (embed usually exists now)
+    asyncio.create_task(delete_if_gif_after_delay(after, delay=0))
 
 # ============================================================
 # COMMANDS: ECHO (anyone)
@@ -422,10 +447,7 @@ async def add_item(ctx: commands.Context, list_name: str, *, item: str):
         return await ctx.send(f"✅ Added to {emoji} **{normalize_item(list_name)}**: {item}")
 
     # Non-owner: run a poll
-    question = ADD_POLL_QUESTION_TEMPLATE.format(
-        item=item,
-        list_name=normalize_item(list_name)
-    )
+    question = ADD_POLL_QUESTION_TEMPLATE.format(item=item, list_name=normalize_item(list_name))
     yes_votes, no_votes, invalid_votes = await run_yes_no_poll(ctx, question)
 
     # Decision rule:
@@ -480,15 +502,12 @@ async def remove_item(ctx: commands.Context, list_name: str, *, target: str):
         return await ctx.send(f"🗑️ Removed from **{normalize_item(list_name)}**: {removed}")
 
     # Non-owner: run a poll
-    question = REMOVE_POLL_QUESTION_TEMPLATE.format(
-        item=resolved_item,
-        list_name=normalize_item(list_name)
-    )
+    question = REMOVE_POLL_QUESTION_TEMPLATE.format(item=resolved_item, list_name=normalize_item(list_name))
     yes_votes, no_votes, invalid_votes = await run_yes_no_poll(ctx, question)
 
     if yes_votes >= 2 and yes_votes > no_votes:
         # Re-resolve in case list changed while poll ran
-        idx2, resolved_item2 = resolve_removal_target(items, resolved_item)
+        idx2, _ = resolve_removal_target(items, resolved_item)
         if idx2 is None:
             return await ctx.send("ℹ️ It was already removed while the poll was running.")
 
