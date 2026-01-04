@@ -66,7 +66,7 @@ DATA_FILE = DATA_DIR / "lists.json"
 # BOT SETUP
 # ============================================================
 intents = discord.Intents.default()
-intents.message_content = True  # REQUIRED for prefix commands and reading message content
+intents.message_content = True  # required for prefix commands + reading message content
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -232,12 +232,8 @@ def resolve_removal_target(items: list[str], target: str) -> tuple[int | None, s
     return None, None
 
 # ============================================================
-# GIF AUTO-DELETE 
-# Deletes any message containing a GIF after 5 seconds.
-# Covers:
-# - .gif attachments (uploaded)
-# - message links containing ".gif"
-# - Tenor/Giphy links (common)
+# GIF AUTO-DELETE (Tenor + Giphy + .gif attachments)
+# Deletes matching messages 5 seconds after they are sent.
 # ============================================================
 def message_has_gif(message: discord.Message) -> bool:
     # 1) Uploaded GIF attachments
@@ -254,7 +250,7 @@ def message_has_gif(message: discord.Message) -> bool:
     if "giphy.com" in text or "media.giphy.com" in text:
         return True
 
-    # 3) Embedded GIFs (Discord auto-embeds)
+    # 3) Discord auto-embeds (GIF picker often shows up here)
     for e in message.embeds:
         urls = [
             e.url,
@@ -264,14 +260,15 @@ def message_has_gif(message: discord.Message) -> bool:
         for u in urls:
             if not u:
                 continue
-            u = u.lower()
-            if "tenor.com" in u or "giphy.com" in u:
+            u = str(u).lower()
+            if "tenor.com" in u or "media.tenor.com" in u:
+                return True
+            if "giphy.com" in u or "media.giphy.com" in u:
                 return True
             if u.endswith(".gif"):
                 return True
 
     return False
-
 
 # ============================================================
 # EVENTS
@@ -286,14 +283,13 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # GIF deletion logic
     if message_has_gif(message):
         await asyncio.sleep(5)
         try:
             await message.delete()
         except (discord.Forbidden, discord.NotFound):
-            # Forbidden: missing Manage Messages
-            # NotFound: already deleted
+            # Forbidden = missing Manage Messages perms
+            # NotFound = message already deleted
             pass
 
     # IMPORTANT: keeps prefix commands working
