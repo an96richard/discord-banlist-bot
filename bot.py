@@ -240,21 +240,38 @@ def resolve_removal_target(items: list[str], target: str) -> tuple[int | None, s
 # - Tenor/Giphy links (common)
 # ============================================================
 def message_has_gif(message: discord.Message) -> bool:
-    # 1) Uploaded attachments that are GIFs
+    # 1) Uploaded GIF attachments
     for a in message.attachments:
-        filename = (a.filename or "").lower()
-        content_type = (a.content_type or "").lower()  # can be None
-        if filename.endswith(".gif") or content_type == "image/gif":
+        if (a.filename or "").lower().endswith(".gif"):
+            return True
+        if (a.content_type or "").lower() == "image/gif":
             return True
 
-    # 2) Common gif links in the message text
+    # 2) Tenor / Giphy links in plain text (no .gif required)
     text = (message.content or "").lower()
-    if ".gif" in text:
+    if "tenor.com" in text or "media.tenor.com" in text:
         return True
-    if "tenor.com" in text or "giphy.com" in text:
+    if "giphy.com" in text or "media.giphy.com" in text:
         return True
 
+    # 3) Embedded GIFs (Discord auto-embeds)
+    for e in message.embeds:
+        urls = [
+            e.url,
+            getattr(e.thumbnail, "url", None),
+            getattr(e.image, "url", None),
+        ]
+        for u in urls:
+            if not u:
+                continue
+            u = u.lower()
+            if "tenor.com" in u or "giphy.com" in u:
+                return True
+            if u.endswith(".gif"):
+                return True
+
     return False
+
 
 # ============================================================
 # EVENTS
