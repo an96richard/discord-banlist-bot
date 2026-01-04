@@ -1,4 +1,3 @@
-
 import os
 import json
 import re
@@ -10,7 +9,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 # ============================================================
-# ENV / CONFIGa
+# ENV / CONFIG
 # ============================================================
 load_dotenv()
 
@@ -63,14 +62,11 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATA_FILE = DATA_DIR / "lists.json"
 
-
-
-
 # ============================================================
 # BOT SETUP
 # ============================================================
 intents = discord.Intents.default()
-intents.message_content = True  # required for prefix commands
+intents.message_content = True  # REQUIRED for prefix commands and reading message content
 intents.members = True  # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -170,7 +166,7 @@ def is_kick_whitelisted(member: discord.Member) -> bool:
 
 async def run_yes_no_poll(ctx: commands.Context, question: str) -> tuple[int, int, int]:
     """
-    Creates a poll message, waits POLL_DURATION_SECONDS, thens returns (yes_votes, no_votes, invalid_votes).
+    Creates a poll message, waits POLL_DURATION_SECONDS, then returns (yes_votes, no_votes, invalid_votes).
     One vote per person:
       - if a user reacted to both ✅ and ❌, their vote is invalid and not counted.
     Bots are ignored.
@@ -236,11 +232,55 @@ def resolve_removal_target(items: list[str], target: str) -> tuple[int | None, s
     return None, None
 
 # ============================================================
+# GIF AUTO-DELETE 
+# Deletes any message containing a GIF after 5 seconds.
+# Covers:
+# - .gif attachments (uploaded)
+# - message links containing ".gif"
+# - Tenor/Giphy links (common)
+# ============================================================
+def message_has_gif(message: discord.Message) -> bool:
+    # 1) Uploaded attachments that are GIFs
+    for a in message.attachments:
+        filename = (a.filename or "").lower()
+        content_type = (a.content_type or "").lower()  # can be None
+        if filename.endswith(".gif") or content_type == "image/gif":
+            return True
+
+    # 2) Common gif links in the message text
+    text = (message.content or "").lower()
+    if ".gif" in text:
+        return True
+    if "tenor.com" in text or "giphy.com" in text:
+        return True
+
+    return False
+
+# ============================================================
 # EVENTS
 # ============================================================
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (id={bot.user.id})")
+
+@bot.event
+async def on_message(message: discord.Message):
+    # ignore bots (including itself)
+    if message.author.bot:
+        return
+
+    # GIF deletion logic
+    if message_has_gif(message):
+        await asyncio.sleep(5)
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            # Forbidden: missing Manage Messages
+            # NotFound: already deleted
+            pass
+
+    # IMPORTANT: keeps prefix commands working
+    await bot.process_commands(message)
 
 # ============================================================
 # COMMANDS: ECHO (anyone)
