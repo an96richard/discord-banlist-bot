@@ -24,7 +24,6 @@ if not OWNER_ID_RAW or not OWNER_ID_RAW.isdigit():
 OWNER_ID = int(OWNER_ID_RAW)
 
 # Hard-coded lists (cannot add new list names)
-# Edit this to your desired lists + emojis
 ALLOWED_LISTS: dict[str, str] = {
     "banned": "🚫",
     "limited": "1️⃣",
@@ -48,13 +47,11 @@ KICK_WHITELIST_USER_IDS = {
 }
 
 # Roles that can NEVER be kicked by the bot (by role ID)
-# (Leave empty if you don't want role-based whitelisting.)
 KICK_WHITELIST_ROLE_IDS: set[int] = set()
 
-# Users whose image media/stickers should be auto-deleted (by user ID)
-# Add IDs here to block their image media + stickers.
+# Users whose image media + stickers should be auto-deleted (by user ID)
 IMAGE_BLOCK_USER_IDS: set[int] = {
-    # 123456789012345678,
+    1092891407494164602# 123456789012345678,
 }
 
 POLL_DURATION_SECONDS = 600  # 10 minutes
@@ -73,7 +70,7 @@ DATA_FILE = DATA_DIR / "lists.json"
 # ============================================================
 intents = discord.Intents.default()
 intents.message_content = True  # REQUIRED to read message content
-intents.members = True  # recommended for kick/role checks
+intents.members = True          # recommended for kick/role checks
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -145,11 +142,9 @@ def is_owner(ctx: commands.Context) -> bool:
     return ctx.author.id == OWNER_ID
 
 def normalize_item(text: str) -> str:
-    # Capitalize first letter of every word, rest lowercase
     return " ".join(word.capitalize() for word in text.split())
 
 def natural_sort_key(s: str):
-    # "A2" < "A10" (natural numeric ordering within strings)
     parts = re.split(r"(\d+)", s.casefold())
     return [int(p) if p.isdigit() else p for p in parts]
 
@@ -188,7 +183,6 @@ async def run_yes_no_poll(ctx: commands.Context, question: str) -> tuple[int, in
 
     await asyncio.sleep(POLL_DURATION_SECONDS)
 
-    # Re-fetch to get final reactions (message could be deleted)
     try:
         poll_message = await ctx.channel.fetch_message(poll_message.id)
     except (discord.NotFound, discord.Forbidden):
@@ -243,19 +237,16 @@ def resolve_removal_target(items: list[str], target: str) -> tuple[int | None, s
 GIF_DOMAINS = ("tenor.com", "media.tenor.com", "giphy.com", "media.giphy.com")
 
 def message_has_gif(message: discord.Message) -> bool:
-    # 1) Uploaded GIF attachments
     for a in message.attachments:
         fn = (a.filename or "").lower()
         ct = (a.content_type or "").lower()
         if fn.endswith(".gif") or ct == "image/gif":
             return True
 
-    # 2) Tenor / Giphy links in message text (no .gif required)
     text = (message.content or "").lower()
     if any(d in text for d in GIF_DOMAINS):
         return True
 
-    # 3) Discord auto-embeds (GIF picker often appears here)
     for e in message.embeds:
         candidates = [
             e.url,
@@ -267,21 +258,15 @@ def message_has_gif(message: discord.Message) -> bool:
             if not u:
                 continue
             u = str(u).lower()
-            if any(d in u for d in GIF_DOMAINS):
-                return True
-            if u.endswith(".gif"):
+            if any(d in u for d in GIF_DOMAINS) or u.endswith(".gif"):
                 return True
 
     return False
 
 async def delete_if_gif_after_delay(message: discord.Message, delay: int = 5) -> None:
-    """
-    Waits, re-fetches the message (so embeds/previews are present), then deletes if it matches.
-    """
     if delay > 0:
         await asyncio.sleep(delay)
 
-    # Re-fetch so we catch Tenor/Giphy preview embeds that arrive after initial send
     try:
         fresh = await message.channel.fetch_message(message.id)
     except (discord.NotFound, discord.Forbidden):
@@ -298,6 +283,10 @@ async def delete_if_gif_after_delay(message: discord.Message, delay: int = 5) ->
 
 # ============================================================
 # MEDIA AUTO-DELETE (for specific users: images + stickers)
+# Fixes:
+# - Stickers/attachments are checked & deleted immediately (no fetch needed)
+# - Fetch is only used for embeds/link previews
+# - Better sticker attribute compatibility + better forbidden logging
 # ============================================================
 IMAGE_DOMAINS = (
     "i.imgur.com", "imgur.com",
@@ -308,20 +297,41 @@ IMAGE_DOMAINS = (
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".heic", ".heif", ".gif")
 
-def message_has_image_media(message: discord.Message) -> bool:
-    # 1) Uploaded image attachments
+def message_has_sticker(message: discord.Message) -> bool:
+    """
+    Works across common discord.py variants:
+    - Message.stickers (list of StickerItem)
+    - Message.sticker_items (some forks / older naming)
+    """
+    stickers = getattr(message, "stickers", None)
+    if stickers is not None and len(stickers) > 0:
+        return True
+
+    sticker_items = getattr(message, "sticker_items", None)
+    if sticker_items is not None and len(sticker_items) > 0:
+        return True
+
+    return False
+
+def message_has_image_attachments(message: discord.Message) -> bool:
+    """Fast path: attachments only."""
     for a in message.attachments:
         ct = (a.content_type or "").lower()
         fn = (a.filename or "").lower()
-
         if ct.startswith("image/"):
             return True
-
-        # Fallback if content_type is missing
         if fn.endswith(IMAGE_EXTS):
             return True
+    return False
 
-    # 2) Embeds that contain images (Discord previews, link embeds, etc.)
+def message_has_image_media(message: discord.Message) -> bool:
+    """
+    Full check: attachments + embeds + (optional) plain links.
+    Note: attachments are also covered by message_has_image_attachments().
+    """
+    if message_has_image_attachments(message):
+        return True
+
     for e in message.embeds:
         candidates = [
             e.url,
@@ -332,56 +342,59 @@ def message_has_image_media(message: discord.Message) -> bool:
             if not u:
                 continue
             u = str(u).lower()
-
             if u.endswith(IMAGE_EXTS):
                 return True
-
-            # Helps when URLs have no extension (common with CDNs / twitter)
             if any(d in u for d in IMAGE_DOMAINS):
                 return True
 
-    # 3) Plain links in message content (optional)
     text = (message.content or "").lower()
     if any(d in text for d in IMAGE_DOMAINS):
         return True
-    if any(ext in text for ext in IMAGE_EXTS):
-        # Covers cases like "...image.png?size=..." etc.
+    if any(ext in text for ext in IMAGE_EXTS):  # catches querystrings too
         return True
 
     return False
 
-def message_has_sticker(message: discord.Message) -> bool:
-    """
-    True if the message contains any stickers (standard or guild stickers).
-    In discord.py, Message.stickers is a list (possibly empty).
-    """
-    try:
-        return bool(getattr(message, "stickers", []))
-    except Exception:
-        return False
-
 async def delete_if_blocked_user_media_after_delay(message: discord.Message, delay: int = 2) -> None:
     """
     If author is in IMAGE_BLOCK_USER_IDS, delete their message if it contains:
-      - image media (attachments/embeds/links)
-      - OR any stickers
-    Delay + re-fetch helps catch embeds/previews that appear shortly after sending.
+      - stickers
+      - OR image attachments / image media
+
+    Immediate delete for stickers/attachments (no fetch required).
+    Delayed fetch only for embed/link preview detection.
     """
     if message.author.id not in IMAGE_BLOCK_USER_IDS:
         return
 
+    # ✅ Immediate path: stickers & attachments are available immediately
+    if message_has_sticker(message) or message_has_image_attachments(message):
+        try:
+            await message.delete()
+            print(f"[MEDIA-DELETE] Deleted immediate media msg {message.id} from user {message.author.id}")
+        except discord.Forbidden:
+            print(f"[MEDIA-DELETE] Forbidden: missing Manage Messages to delete message {message.id}")
+        except discord.NotFound:
+            pass
+        return
+
+    # ⏳ Delayed path: catch embeds/link previews
     if delay > 0:
         await asyncio.sleep(delay)
 
     try:
         fresh = await message.channel.fetch_message(message.id)
-    except (discord.NotFound, discord.Forbidden):
+    except discord.Forbidden:
+        # Usually missing Read Message History in that channel
+        print(f"[MEDIA-DELETE] Forbidden: missing Read Message History to fetch message {message.id}")
+        return
+    except discord.NotFound:
         return
 
-    if message_has_image_media(fresh) or message_has_sticker(fresh):
+    if message_has_sticker(fresh) or message_has_image_media(fresh):
         try:
             await fresh.delete()
-            print(f"[MEDIA-DELETE] Deleted media message {fresh.id} from user {fresh.author.id}")
+            print(f"[MEDIA-DELETE] Deleted media msg {fresh.id} from user {fresh.author.id}")
         except discord.Forbidden:
             print(f"[MEDIA-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
         except discord.NotFound:
@@ -396,24 +409,19 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # ignore bots (including itself)
     if message.author.bot:
         return
 
-    # Schedule checks (don’t block the event loop)
     asyncio.create_task(delete_if_gif_after_delay(message, delay=5))
     asyncio.create_task(delete_if_blocked_user_media_after_delay(message, delay=2))
 
-    # IMPORTANT: keeps prefix commands working
     await bot.process_commands(message)
 
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
-    # Discord often adds embeds/previews by editing the message shortly after sending
     if after.author and after.author.bot:
         return
 
-    # As soon as it edits, re-check immediately (embed usually exists now)
     asyncio.create_task(delete_if_gif_after_delay(after, delay=0))
     asyncio.create_task(delete_if_blocked_user_media_after_delay(after, delay=0))
 
@@ -445,7 +453,6 @@ async def kick(ctx: commands.Context, member: discord.Member, *, reason: str = "
     if is_kick_whitelisted(member):
         return await ctx.send("🛡️ That member is whitelisted and cannot be kicked.")
 
-    # role hierarchy checks
     if member.top_role >= ctx.author.top_role and ctx.guild and ctx.guild.owner_id != ctx.author.id:
         return await ctx.send("You can’t kick someone with an equal or higher role than you.")
 
@@ -503,7 +510,6 @@ async def list_all(ctx: commands.Context):
 
     message = "\n\n".join(blocks)
 
-    # Discord message limit safety
     for start in range(0, len(message), 1900):
         await ctx.send(message[start:start + 1900])
 
@@ -529,13 +535,11 @@ async def add_item(ctx: commands.Context, list_name: str, *, item: str):
 
     items = lists_data[list_name]["items"]
 
-    # Ignore duplicates (case-insensitive)
     if contains_case_insensitive(items, item):
         resort(list_name)
         save_lists(lists_data)
         return await ctx.send(f"⚠️ Already exists in **{normalize_item(list_name)}**.")
 
-    # If owner, add immediately
     if is_owner(ctx):
         items.append(item)
         resort(list_name)
@@ -543,13 +547,9 @@ async def add_item(ctx: commands.Context, list_name: str, *, item: str):
         emoji = lists_data[list_name]["emoji"]
         return await ctx.send(f"✅ Added to {emoji} **{normalize_item(list_name)}**: {item}")
 
-    # Non-owner: run a poll
     question = ADD_POLL_QUESTION_TEMPLATE.format(item=item, list_name=normalize_item(list_name))
     yes_votes, no_votes, invalid_votes = await run_yes_no_poll(ctx, question)
 
-    # Decision rule:
-    # - Yes must win (strictly more than No)
-    # - Yes must be 2 or more
     if yes_votes >= 2 and yes_votes > no_votes:
         if contains_case_insensitive(items, item):
             return await ctx.send("ℹ️ It was already added while the poll was running.")
@@ -591,19 +591,16 @@ async def remove_item(ctx: commands.Context, list_name: str, *, target: str):
     if idx is None or resolved_item is None:
         return await ctx.send("❌ Item not found (or invalid number).")
 
-    # Owner removes immediately
     if is_owner(ctx):
         removed = items.pop(idx)
         resort(list_name)
         save_lists(lists_data)
         return await ctx.send(f"🗑️ Removed from **{normalize_item(list_name)}**: {removed}")
 
-    # Non-owner: run a poll
     question = REMOVE_POLL_QUESTION_TEMPLATE.format(item=resolved_item, list_name=normalize_item(list_name))
     yes_votes, no_votes, invalid_votes = await run_yes_no_poll(ctx, question)
 
     if yes_votes >= 2 and yes_votes > no_votes:
-        # Re-resolve in case list changed while poll ran
         idx2, _ = resolve_removal_target(items, resolved_item)
         if idx2 is None:
             return await ctx.send("ℹ️ It was already removed while the poll was running.")
