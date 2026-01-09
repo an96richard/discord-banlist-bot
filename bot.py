@@ -51,6 +51,12 @@ KICK_WHITELIST_USER_IDS = {
 # (Leave empty if you don't want role-based whitelisting.)
 KICK_WHITELIST_ROLE_IDS: set[int] = set()
 
+# Users whose image media should be auto-deleted (by user ID)
+# Add IDs here to block their image media (attachments + image embeds/links).
+IMAGE_BLOCK_USER_IDS: set[int] = {
+    1092891407494164602,
+}
+
 POLL_DURATION_SECONDS = 600  # 10 minutes
 YES_EMOJI = "✅"
 NO_EMOJI = "❌"
@@ -284,11 +290,88 @@ async def delete_if_gif_after_delay(message: discord.Message, delay: int = 5) ->
     if message_has_gif(fresh):
         try:
             await fresh.delete()
-            # Debug line (shows in Railway logs)
             print(f"[GIF-DELETE] Deleted message {fresh.id} in #{getattr(fresh.channel, 'name', 'unknown')}")
         except discord.Forbidden:
-            # Missing Manage Messages perms
             print(f"[GIF-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
+        except discord.NotFound:
+            pass
+
+# ============================================================
+# IMAGE AUTO-DELETE (for specific users)
+# ============================================================
+IMAGE_DOMAINS = (
+    "i.imgur.com", "imgur.com",
+    "cdn.discordapp.com", "media.discordapp.com",
+    "pbs.twimg.com",
+    "images-ext-1.discordapp.net", "images-ext-2.discordapp.net",
+)
+
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".heic", ".heif", ".gif")
+
+def message_has_image_media(message: discord.Message) -> bool:
+    # 1) Uploaded image attachments
+    for a in message.attachments:
+        ct = (a.content_type or "").lower()
+        fn = (a.filename or "").lower()
+
+        if ct.startswith("image/"):
+            return True
+
+        # Fallback if content_type is missing
+        if fn.endswith(IMAGE_EXTS):
+            return True
+
+    # 2) Embeds that contain images (Discord previews, link embeds, etc.)
+    for e in message.embeds:
+        candidates = [
+            e.url,
+            getattr(e.thumbnail, "url", None),
+            getattr(e.image, "url", None),
+        ]
+        for u in candidates:
+            if not u:
+                continue
+            u = str(u).lower()
+
+            if u.endswith(IMAGE_EXTS):
+                return True
+
+            # Helps when URLs have no extension (common with CDNs / twitter)
+            if any(d in u for d in IMAGE_DOMAINS):
+                return True
+
+    # 3) Plain links in message content (optional)
+    text = (message.content or "").lower()
+    if any(d in text for d in IMAGE_DOMAINS):
+        return True
+    if any(ext in text for ext in IMAGE_EXTS):
+        # Covers cases like "...image.png?size=..." etc.
+        return True
+
+    return False
+
+async def delete_if_blocked_user_image_after_delay(message: discord.Message, delay: int = 2) -> None:
+    """
+    If author is in IMAGE_BLOCK_USER_IDS, delete their message if it contains image media.
+    Delay + re-fetch helps catch embeds/previews that appear shortly after sending.
+    """
+    if message.author.id not in IMAGE_BLOCK_USER_IDS:
+        return
+
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+    try:
+        fresh = await message.channel.fetch_message(message.id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+
+    if message_has_image_media(fresh):
+        try:
+            await fresh.delete()
+            print(f"[IMG-DELETE] Deleted image message {fresh.id} from user {fresh.author.id}")
+        except discord.Forbidden:
+            print(f"[IMG-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
         except discord.NotFound:
             pass
 
@@ -305,8 +388,9 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # Schedule a delayed re-check (don’t block the event loop)
+    # Schedule checks (don’t block the event loop)
     asyncio.create_task(delete_if_gif_after_delay(message, delay=5))
+    asyncio.create_task(delete_if_blocked_user_image_after_delay(message, delay=2))
 
     # IMPORTANT: keeps prefix commands working
     await bot.process_commands(message)
@@ -319,6 +403,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
     # As soon as it edits, re-check immediately (embed usually exists now)
     asyncio.create_task(delete_if_gif_after_delay(after, delay=0))
+    asyncio.create_task(delete_if_blocked_user_image_after_delay(after, delay=0))
 
 # ============================================================
 # COMMANDS: ECHO (anyone)
