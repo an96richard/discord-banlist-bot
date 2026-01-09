@@ -51,10 +51,10 @@ KICK_WHITELIST_USER_IDS = {
 # (Leave empty if you don't want role-based whitelisting.)
 KICK_WHITELIST_ROLE_IDS: set[int] = set()
 
-# Users whose image media should be auto-deleted (by user ID)
-# Add IDs here to block their image media (attachments + image embeds/links).
+# Users whose image media/stickers should be auto-deleted (by user ID)
+# Add IDs here to block their image media + stickers.
 IMAGE_BLOCK_USER_IDS: set[int] = {
-    1092891407494164602,
+    # 123456789012345678,
 }
 
 POLL_DURATION_SECONDS = 600  # 10 minutes
@@ -297,7 +297,7 @@ async def delete_if_gif_after_delay(message: discord.Message, delay: int = 5) ->
             pass
 
 # ============================================================
-# IMAGE AUTO-DELETE (for specific users)
+# MEDIA AUTO-DELETE (for specific users: images + stickers)
 # ============================================================
 IMAGE_DOMAINS = (
     "i.imgur.com", "imgur.com",
@@ -350,9 +350,21 @@ def message_has_image_media(message: discord.Message) -> bool:
 
     return False
 
-async def delete_if_blocked_user_image_after_delay(message: discord.Message, delay: int = 2) -> None:
+def message_has_sticker(message: discord.Message) -> bool:
     """
-    If author is in IMAGE_BLOCK_USER_IDS, delete their message if it contains image media.
+    True if the message contains any stickers (standard or guild stickers).
+    In discord.py, Message.stickers is a list (possibly empty).
+    """
+    try:
+        return bool(getattr(message, "stickers", []))
+    except Exception:
+        return False
+
+async def delete_if_blocked_user_media_after_delay(message: discord.Message, delay: int = 2) -> None:
+    """
+    If author is in IMAGE_BLOCK_USER_IDS, delete their message if it contains:
+      - image media (attachments/embeds/links)
+      - OR any stickers
     Delay + re-fetch helps catch embeds/previews that appear shortly after sending.
     """
     if message.author.id not in IMAGE_BLOCK_USER_IDS:
@@ -366,12 +378,12 @@ async def delete_if_blocked_user_image_after_delay(message: discord.Message, del
     except (discord.NotFound, discord.Forbidden):
         return
 
-    if message_has_image_media(fresh):
+    if message_has_image_media(fresh) or message_has_sticker(fresh):
         try:
             await fresh.delete()
-            print(f"[IMG-DELETE] Deleted image message {fresh.id} from user {fresh.author.id}")
+            print(f"[MEDIA-DELETE] Deleted media message {fresh.id} from user {fresh.author.id}")
         except discord.Forbidden:
-            print(f"[IMG-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
+            print(f"[MEDIA-DELETE] Forbidden: missing Manage Messages to delete message {fresh.id}")
         except discord.NotFound:
             pass
 
@@ -390,7 +402,7 @@ async def on_message(message: discord.Message):
 
     # Schedule checks (don’t block the event loop)
     asyncio.create_task(delete_if_gif_after_delay(message, delay=5))
-    asyncio.create_task(delete_if_blocked_user_image_after_delay(message, delay=2))
+    asyncio.create_task(delete_if_blocked_user_media_after_delay(message, delay=2))
 
     # IMPORTANT: keeps prefix commands working
     await bot.process_commands(message)
@@ -403,7 +415,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
     # As soon as it edits, re-check immediately (embed usually exists now)
     asyncio.create_task(delete_if_gif_after_delay(after, delay=0))
-    asyncio.create_task(delete_if_blocked_user_image_after_delay(after, delay=0))
+    asyncio.create_task(delete_if_blocked_user_media_after_delay(after, delay=0))
 
 # ============================================================
 # COMMANDS: ECHO (anyone)
